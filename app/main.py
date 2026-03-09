@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings, setup_logging
 from app.database import get_db, init_db
-from app.schemas import FileJobCreate, FileUploadResponse, FileJobStatusResponse
+from app.schemas import FileJobCreate, IdentificationResponse, FileJobStatusResponse
 from app.crud import create_file_job, get_file_job_by_req_id
 from app.models import JobStatus
 from app.services import process_file, restart_processing_jobs
@@ -81,7 +81,7 @@ async def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/identification", response_model=FileUploadResponse, status_code=status.HTTP_202_ACCEPTED)
+@app.post("/identification", response_model=IdentificationResponse, status_code=status.HTTP_202_ACCEPTED)
 async def identification_endpoint(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -105,7 +105,7 @@ async def identification_endpoint(
         hash       — SHA256 of (api_key|client_id|timestamp|encrypted_payload)
 
     Returns:
-        FileUploadResponse with req_id (from s3_path) and status=Processing
+        IdentificationResponse with request_id (req_id from s3_path), channel_id, and case_id
     """
     # ── 1. client_id injected by AuthorizationMiddleware ─────────────────────
     client_id = getattr(request.state, "client_id", None)
@@ -200,10 +200,10 @@ async def identification_endpoint(
         asyncio.create_task(process_file(req_id))
         logger.info(f"Request {req_id}: Background processing started")
 
-        return FileUploadResponse(
-            req_id=req_id,
-            status=JobStatus.Processing,
-            message="Request received and processing started",
+        return IdentificationResponse(
+            request_id=req_id,
+            channel_id=client_id,
+            case_id=case_id,
         )
 
     except HTTPException:

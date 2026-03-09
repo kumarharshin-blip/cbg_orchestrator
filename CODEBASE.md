@@ -116,7 +116,7 @@ Composite index: `ix_status_updated` on `(status, updated_at)`.
 | `FileJobCreate` | Internal — creating a DB row |
 | `FileJobResponse` | Full job read (all fields) |
 | `FileJobStatusResponse` | `GET /status/{req_id}` response |
-| `FileUploadResponse` | `POST /identification` 202 response |
+| `IdentificationResponse` | `POST /identification` 202 response |
 
 All `status` fields are typed as `JobStatus`.
 
@@ -160,14 +160,29 @@ Runs in its own `AsyncSessionLocal` session:
    }
    ```
 5. On HTTP 200:
-   - Check `response.json().get('error')` — if set, raise.
+   - Validate the response is a JSON **array** — raise if not.
    - Build `result_data` dict, JSON-serialise → `results`.
    - Call `call_webhook(req_id, result_data)`; capture response as `webhook_result`.
    - `update_job_status(status=JobStatus.FinishedProcessing, results=..., webhook_result=...)` → commit.
 6. On non-200 or any exception:
    - Build error dict → `update_job_status(status=JobStatus.Failed, results=...)` → commit.
 
-**`result_data` shape (on success):**
+**Split service response** (the raw HTTP body — a JSON array of document objects):
+```json
+[
+  {
+    "document_name": "GST Registration Certificate",
+    "from_page": 2,
+    "to_page": 4,
+    "language": "en",
+    "country": "in",
+    "doc_filepath": "https://s3.ap-south-1.amazonaws.com/output/<req_id>/<req_id>_GST_Registration_Certificate.pdf"
+  },
+  ...
+]
+```
+
+**`result_data` shape stored in DB (on success):**
 ```json
 {
   "req_id": "...",
@@ -176,9 +191,7 @@ Runs in its own `AsyncSessionLocal` session:
   "processing_time_seconds": 1.23,
   "processed_at": "2026-03-09T...",
   "status": "success",
-  "results": [...],
-  "token_usage": {...},
-  "channel_id": "...",
+  "results": [ ...array of document objects from split service... ],
   "metadata": {...}
 }
 ```
@@ -238,11 +251,11 @@ https://s3.ap-south-1.amazonaws.com/bucket_name/req_id/raw
 4. `metadata` normalised: dict/list → JSON string; validated as valid JSON if string.
 5. `create_file_job()` → `db.commit()`.
 6. `asyncio.create_task(process_file(req_id))`.
-7. Return `FileUploadResponse(req_id=..., status=JobStatus.Processing)`.
+7. Return `IdentificationResponse(request_id=req_id, channel_id=client_id, case_id=case_id)`.
 
-**Response schema (`FileUploadResponse`):**
+**Response schema (`IdentificationResponse`):**
 ```json
-{ "req_id": "<extracted req_id>", "status": "Processing", "message": "Request received and processing started" }
+{ "request_id": "<extracted req_id>", "channel_id": "<client_id from header>", "case_id": "<case_id from payload>" }
 ```
 
 ### `GET /status/{req_id}` → `200`

@@ -121,14 +121,16 @@ async def process_file(req_id: str) -> None:
                     f"Failed to parse JSON response from split service: {e}"
                 )
 
-            if api_response.get("error"):
+            # Split service returns a JSON array of identified documents directly
+            if not isinstance(api_response, list):
                 raise Exception(
-                    f"Split service error: {api_response['error']}"
+                    f"Unexpected split service response type: expected list, got {type(api_response).__name__}"
                 )
 
             logger.info(
                 f"Request {req_id}: Split service responded successfully. "
-                f"Processing time: {api_response.get('processing_time', processing_time):.2f}s"
+                f"Processing time: {processing_time:.2f}s — "
+                f"{len(api_response)} document(s) identified"
             )
 
             # ── 4a. Build result_data ─────────────────────────────────────────
@@ -136,19 +138,12 @@ async def process_file(req_id: str) -> None:
                 "req_id": req_id,
                 "s3_path": job.s3_path,
                 "split": bool(job.split),
-                "processing_time_seconds": api_response.get("processing_time", processing_time),
+                "processing_time_seconds": processing_time,
                 "processed_at": end_time.isoformat(),
                 "status": "success",
-                "results": api_response.get("results", []),
-                "token_usage": api_response.get("token_usage"),
-                "channel_id": api_response.get("channel_id"),
+                "results": api_response,  # raw list of document objects
                 "metadata": metadata_dict,
             }
-
-            if api_response.get("results"):
-                logger.info(
-                    f"Request {req_id}: Identified {len(api_response['results'])} document(s)"
-                )
 
             results_json = json.dumps(result_data, indent=2)
 

@@ -28,7 +28,7 @@ class FileJob(Base):
         created_at: Timestamp when job was created
         updated_at: Timestamp when job was last updated
     """
-    __tablename__ = "file_jobs"
+    __tablename__ = "file_jobs_v2"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     s3_path = Column(String(1024), nullable=False)

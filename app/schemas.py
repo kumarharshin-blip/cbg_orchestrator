@@ -39,8 +39,8 @@ class FileJobStatusResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class FileUploadResponse(BaseModel):
-    """Schema for identification endpoint response."""
-    req_id: str
-    status: JobStatus
-    message: str = "Request received and processing started"
+class IdentificationResponse(BaseModel):
+    """Schema for POST /identification 202 response."""
+    request_id: str
+    channel_id: str
+    case_id: str
