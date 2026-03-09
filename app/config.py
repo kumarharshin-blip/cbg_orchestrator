@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     SPLIT_SERVICE_URL: str = "http://localhost:8900/split"
     SPLIT_SERVICE_TIMEOUT: int = 300  # 5 minutes timeout
     DEFAULT_CHANNEL_ID: str = "default_channel"
+
+    # Webhook
+    WEBHOOK_URL: str = "http://localhost:8001/webhook/vx/v1/result"
+    WEBHOOK_TIMEOUT: int = 30  # seconds
     
     # AWS Configuration (optional - boto3 uses environment vars or IAM roles)
     AWS_ACCESS_KEY_ID: str = ""

@@ -4,7 +4,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional, List
 from datetime import datetime
 
-from app.models import FileJob
+from app.models import FileJob, JobStatus
 from app.schemas import FileJobCreate
 
 
@@ -24,10 +24,8 @@ async def create_file_job(db: AsyncSession, job: FileJobCreate) -> FileJob:
     """
     try:
         db_job = FileJob(
-            filename=job.filename,
-            local_filepath=job.local_filepath,
             s3_path=job.s3_path,
-            request_id=job.request_id,
+            req_id=job.req_id,
             split=1 if job.split else 0,  # Convert bool to int for SQLite
             request_metadata=job.request_metadata,
             status=job.status,
@@ -41,19 +39,19 @@ async def create_file_job(db: AsyncSession, job: FileJobCreate) -> FileJob:
         raise e
 
 
-async def get_file_job_by_request_id(db: AsyncSession, request_id: str) -> Optional[FileJob]:
+async def get_file_job_by_req_id(db: AsyncSession, req_id: str) -> Optional[FileJob]:
     """
-    Retrieve a file job by request ID.
+    Retrieve a file job by req_id.
     
     Args:
         db: Database session
-        request_id: Unique request identifier
+        req_id: Unique request identifier
         
     Returns:
         FileJob instance or None if not found
     """
     result = await db.execute(
-        select(FileJob).where(FileJob.request_id == request_id)
+        select(FileJob).where(FileJob.req_id == req_id)
     )
     return result.scalar_one_or_none()
 
@@ -75,13 +73,13 @@ async def get_file_job_by_id(db: AsyncSession, job_id: int) -> Optional[FileJob]
     return result.scalar_one_or_none()
 
 
-async def get_jobs_by_status(db: AsyncSession, status: str) -> List[FileJob]:
+async def get_jobs_by_status(db: AsyncSession, status: JobStatus) -> List[FileJob]:
     """
     Retrieve all file jobs with a specific status.
     
     Args:
         db: Database session
-        status: Job status to filter by
+        status: JobStatus enum value to filter by
         
     Returns:
         List of FileJob instances
@@ -94,34 +92,37 @@ async def get_jobs_by_status(db: AsyncSession, status: str) -> List[FileJob]:
 
 async def update_job_status(
     db: AsyncSession,
-    request_id: str,
-    status: str,
-    results: Optional[str] = None
+    req_id: str,
+    status: JobStatus,
+    results: Optional[str] = None,
+    webhook_result: Optional[str] = None,
 ) -> Optional[FileJob]:
     """
-    Update the status and results of a file job.
+    Update the status, results, and webhook_result of a file job.
     
     Args:
         db: Database session
-        request_id: Unique request identifier
-        status: New status
+        req_id: Unique request identifier
+        status: New JobStatus
         results: Optional results JSON string
+        webhook_result: Optional JSON string of the webhook response
         
     Returns:
         Updated FileJob instance or None if not found
     """
     try:
-        # First get the job
-        job = await get_file_job_by_request_id(db, request_id)
+        job = await get_file_job_by_req_id(db, req_id)
         if not job:
             return None
         
-        # Update fields
         job.status = status
         job.updated_at = datetime.utcnow()
         
         if results is not None:
             job.results = results
+
+        if webhook_result is not None:
+            job.webhook_result = webhook_result
         
         await db.flush()
         await db.refresh(job)
@@ -151,3 +152,4 @@ async def get_all_jobs(
         select(FileJob).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
+

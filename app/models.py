@@ -1,48 +1,60 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Index
+import enum
+
+from sqlalchemy import Column, Integer, String, Text, DateTime, Index, Enum as SQLAlchemyEnum
 from sqlalchemy.sql import func
 from app.database import Base
+
+
+class JobStatus(str, enum.Enum):
+    """Enum representing the lifecycle states of a FileJob."""
+    Processing = "Processing"
+    FinishedProcessing = "Finished Processing"
+    Failed = "Failed"
 
 
 class FileJob(Base):
     """
     FileJob model for tracking file processing jobs.
-    
+
     Attributes:
         id: Primary key
-        filename: Original filename (nullable for S3-only requests)
-        local_filepath: Local path where file is stored (nullable if S3)
-        s3_path: S3 path to the file (nullable if local)
-        request_id: Unique identifier for the request (provided by client)
+        s3_path: Full S3 URL to the file (required)
+        req_id: Unique identifier extracted from the s3_path URL
         split: Boolean flag indicating if file should be split
         request_metadata: JSON string containing additional metadata
-        status: Current status of the job
+        status: Current status of the job (JobStatus enum)
         results: JSON string containing processing results
+        webhook_result: JSON string with the response received from the result webhook
         created_at: Timestamp when job was created
         updated_at: Timestamp when job was last updated
     """
     __tablename__ = "file_jobs"
-    
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    filename = Column(String(255), nullable=True)
-    local_filepath = Column(String(512), nullable=True)
-    s3_path = Column(String(1024), nullable=True)
-    request_id = Column(String(100), unique=True, nullable=False, index=True)
-    split = Column(Integer, nullable=False, default=0)  # SQLite compatible boolean
+    s3_path = Column(String(1024), nullable=False)
+    req_id = Column(String(100), unique=True, nullable=False, index=True)
+    split = Column(Integer, nullable=False, default=0)  # SQLite-compatible boolean
     request_metadata = Column(Text, nullable=True)
-    status = Column(String(50), nullable=False, index=True, default="Processing")
+    status = Column(
+        SQLAlchemyEnum(JobStatus),
+        nullable=False,
+        index=True,
+        default=JobStatus.Processing,
+    )
     results = Column(Text, nullable=True)
+    webhook_result = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
-        nullable=False
+        nullable=False,
     )
-    
-    # Create composite indexes for common queries
+
+    # Composite index for common queries
     __table_args__ = (
         Index('ix_status_updated', 'status', 'updated_at'),
     )
-    
+
     def __repr__(self) -> str:
-        return f"<FileJob(id={self.id}, request_id={self.request_id}, status={self.status})>"
+        return f"<FileJob(id={self.id}, req_id={self.req_id}, status={self.status})>"
