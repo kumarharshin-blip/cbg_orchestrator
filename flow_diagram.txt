@@ -1,0 +1,85 @@
+graph TB
+    Start([Application Startup]) --> InitDB[Initialize Database Tables]
+    InitDB --> CreateDir[Create uploads/ Directory]
+    CreateDir --> RestartJobs[Query Jobs with status='Processing']
+    RestartJobs --> CheckJobs{Any Processing Jobs?}
+    CheckJobs -->|Yes| RestartLoop[For each job: asyncio.create_task<br/>process_file request_id]
+    CheckJobs -->|No| Ready[Application Ready]
+    RestartLoop --> Ready
+    
+    Ready --> APIReady([API Endpoints Active])
+    
+    APIReady --> ClientReq{Client Request}
+    
+    ClientReq -->|POST /identification| ValidateInput[Validate Input:<br/>request_id, split, file/s3_path, metadata]
+    ValidateInput --> CheckSource{Source Type?}
+    CheckSource -->|Neither file<br/>nor s3_path| Error400A[HTTP 400:<br/>Must provide file or s3_path]
+    CheckSource -->|Both file<br/>and s3_path| Error400B[HTTP 400:<br/>Cannot provide both]
+    CheckSource -->|File Upload| SaveFile[Save file to uploads/<br/>request_id_filename]
+    CheckSource -->|S3 Path| ExtractName[Extract filename<br/>from S3 path]
+    
+    SaveFile --> CreateJobDB[Create FileJob in DB:<br/>status='Processing'<br/>filename, local_filepath, s3_path,<br/>request_id, split, request_metadata]
+    ExtractName --> CreateJobDB
+    
+    CreateJobDB --> CommitDB[Commit to Database]
+    CommitDB --> StartBG[asyncio.create_task<br/>process_file request_id]
+    StartBG --> Return202[HTTP 202 Response:<br/>request_id, status='Processing']
+    
+    Return202 --> BGProcess([Background Process Starts])
+    
+    BGProcess --> NewSession[Create new AsyncSession]
+    NewSession --> FetchJob[Fetch FileJob by request_id]
+    FetchJob --> CheckFileSource{File Source?}
+    
+    CheckFileSource -->|S3 Path| ParseS3[Parse S3 URL:<br/>Extract bucket & key]
+    ParseS3 --> DownloadS3[Download from S3 using boto3<br/>Save to temp file]
+    DownloadS3 --> PrepareFile[Prepare file for processing]
+    
+    CheckFileSource -->|Local File| PrepareFile
+    
+    PrepareFile --> CallExternal[HTTP POST to<br/>http://localhost:8900/split<br/>Multipart file upload<br/>Timeout: 300s]
+    
+    CallExternal --> CheckResponse{Response Status?}
+    
+    CheckResponse -->|Success 200| ParseResult[Parse JSON response]
+    ParseResult --> UpdateSuccess[Update DB:<br/>status='Completed'<br/>results=response JSON<br/>updated_at=now]
+    UpdateSuccess --> CommitSuccess[Commit changes]
+    CommitSuccess --> LogSuccess[Log success]
+    LogSuccess --> CleanupSuccess[Cleanup temp files]
+    CleanupSuccess --> EndBG([Background Process Ends])
+    
+    CheckResponse -->|Error 4xx/5xx| LogError[Log error details]
+    LogError --> UpdateFailed[Update DB:<br/>status='Failed'<br/>results=error message<br/>updated_at=now]
+    UpdateFailed --> CommitFailed[Commit changes]
+    CommitFailed --> CleanupFailed[Cleanup temp files]
+    CleanupFailed --> EndBG
+    
+    CheckResponse -->|Exception| CatchException[Catch Exception]
+    CatchException --> UpdateException[Update DB:<br/>status='Failed'<br/>results=exception message]
+    UpdateException --> CommitException[Commit changes]
+    CommitException --> EndBG
+    
+    ClientReq -->|GET /status/request_id| QueryDB[Query FileJob by request_id]
+    QueryDB --> CheckExists{Job Exists?}
+    CheckExists -->|No| Error404[HTTP 404:<br/>Job not found]
+    CheckExists -->|Yes| ReturnStatus[HTTP 200 Response:<br/>request_id, status, results]
+    
+    ClientReq -->|GET /health| HealthCheck[HTTP 200: status='healthy']
+    ClientReq -->|GET /| RootEndpoint[HTTP 200: API info & version]
+    
+    style Start fill:#90EE90
+    style Ready fill:#90EE90
+    style APIReady fill:#87CEEB
+    style Return202 fill:#FFD700
+    style BGProcess fill:#FFA500
+    style EndBG fill:#FF6347
+    style Error400A fill:#FF6347
+    style Error400B fill:#FF6347
+    style Error404 fill:#FF6347
+    style UpdateSuccess fill:#90EE90
+    style UpdateFailed fill:#FF6347
+    style CommitSuccess fill:#90EE90
+    style CommitFailed fill:#FF6347
+
+
+https://mermaid.live/
