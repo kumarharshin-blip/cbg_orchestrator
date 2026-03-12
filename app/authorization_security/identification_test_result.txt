@@ -1,0 +1,25 @@
+=== IDENTIFICATION API TEST ===
+
+URL     : http://localhost:8001/identification
+case_id : test_case_003
+s3_path : s3://fc-dp-athena/test/clubbed_docs.pdf
+split   : false
+
+=== CURL ===
+
+curl -X POST "http://localhost:8001/identification" \
+  -H "client_id: infy_5yh64" \
+  -H "timestamp: 1773282648037" \
+  -H "hash: 3c9cdd46c7ed991b135e3fab36a7f2fbdfcd2d1bb61d5dec2e8ea4dbd0f6d25d" \
+  -H "Content-Type: application/json" \
+  -d '{"encrypted_payload": "gAAAAABpsiVY3YF5VV2lipVAr3BmrLPh33xKTPiawBCsyUv4ZRHHrvQbj7Ilxni2x_X_afZjHwITMkGOC9_jcel_dF50lEvcGEKTWspXNEPjR5lI-j8P06NyTNZpbzMe0Jh3pJLQgHoB0iHKvLlD1SZohzb2KsdB1-b8yMDcHlViccb7wlt_zYIzxZR5vkdZX0bNtWIcdeM5eFFlbEenICh_LaTdQ_yVFPzodqLLUarKS3PN18HCkFQ="}'
+
+=== RESPONSE ===
+
+Status: 202
+
+{
+  "request_id": "clubbed_docs.pdf",
+  "channel_id": "infy_5yh64",
+  "case_id": "test_case_003"
+}

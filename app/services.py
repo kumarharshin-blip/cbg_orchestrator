@@ -96,17 +96,26 @@ async def process_file(req_id: str) -> None:
                 "s3_path": job.s3_path,
                 "req_id": req_id,
                 "split": "true" if job.split else "false",
-                "metadata": metadata_dict,
+                "metadata": json.dumps(metadata_dict),
                 "channel_id": settings.DEFAULT_CHANNEL_ID,
             }
+
+            logger.info(
+                f"Request {req_id}: Payload being sent to split service: {json.dumps(payload)}"
+            )
 
             start_time = datetime.utcnow()
             async with httpx.AsyncClient(timeout=settings.SPLIT_SERVICE_TIMEOUT) as client:
                 response = await client.post(
                     settings.SPLIT_SERVICE_URL,
-                    json=payload,
+                    data=payload,
                 )
             end_time = datetime.utcnow()
+
+            logger.info(
+                f"Request {req_id}: Split service raw response — "
+                f"status={response.status_code}, body={response.text[:500]}"
+            )
             processing_time = (end_time - start_time).total_seconds()
 
             if response.status_code != 200:
@@ -121,7 +130,13 @@ async def process_file(req_id: str) -> None:
                     f"Failed to parse JSON response from split service: {e}"
                 )
 
-            # Split service returns a JSON array of identified documents directly
+            # Split service may return either a raw list or a wrapped dict with a 'results' key
+            if isinstance(api_response, dict):
+                if api_response.get("error"):
+                    raise Exception(
+                        f"Split service returned an error: {api_response['error']}"
+                    )
+                api_response = api_response.get("results", [])
             if not isinstance(api_response, list):
                 raise Exception(
                     f"Unexpected split service response type: expected list, got {type(api_response).__name__}"

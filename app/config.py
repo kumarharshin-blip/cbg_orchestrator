@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     
     # External Service
-    SPLIT_SERVICE_URL: str = "http://localhost:8900/split"
+    SPLIT_SERVICE_URL: str = "http://localhost:8083/identify"
     SPLIT_SERVICE_TIMEOUT: int = 300  # 5 minutes timeout
     DEFAULT_CHANNEL_ID: str = "default_channel"
 
@@ -30,14 +30,27 @@ class Settings(BaseSettings):
     WEBHOOK_URL: str = "http://localhost:8001/webhook/vx/v1/result"
     WEBHOOK_TIMEOUT: int = 30  # seconds
     
-    # AWS Configuration (optional - boto3 uses environment vars or IAM roles)
+    # AWS / S3
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
     AWS_REGION: str = "ap-south-1"
-    
+    BUCKET_NAME: str = ""
+
+    # Request ID generation
+    REQ_ID_LENGTH: int = 8
+    REQ_ID_ALPHABET: str = "abcdefghijklmnopqrstuvwxyz0123456789-_.~"
+
+    # Auth middleware
+    CLIENT_CONFIGS_JSON: str = "{}"
+    AUTH_ENABLED: bool = True
+
+    # Supporting-doc Gemini cache (used by downstream services; kept here so .env loads cleanly)
+    SUPPORTING_DOC_CACHE_ID: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # silently ignore .env keys not declared above
 
 
 @lru_cache()
@@ -47,38 +60,26 @@ def get_settings() -> Settings:
 
 
 def setup_logging():
-    """Setup logging configuration for the application."""
+    """Setup logging to route all application and library logs through the custom JSON logger."""
     import logging
-    from logging.handlers import RotatingFileHandler
-    
-    settings = get_settings()
-    
-    # Create formatter
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    
-    # Setup file handler with rotation
-    file_handler = RotatingFileHandler(
-        settings.LOG_FILE,
-        maxBytes=10 * 1024 * 1024,  # 10MB
-        backupCount=5
-    )
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(formatter)
-    
-    # Setup console handler
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    
-    # Configure root logger
+    from app.logger import customLogger, JsonFormatter, LevelFilter, ALLOWED_LOG_LEVELS
+
+    # Prevent app_logger from propagating to root to avoid duplicate log entries
+    customLogger.logger.propagate = False
+
+    # Configure root logger with the same JSON formatter so all other loggers
+    # (uvicorn, sqlalchemy, logging.getLogger(__name__) calls, etc.) also emit
+    # structured JSON through the same pipeline.
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
-    root_logger.addHandler(file_handler)
+    # Clear any plain-text handlers added by basicConfig or uvicorn before this
+    # call, then install our JsonFormatter so all library loggers emit structured JSON.
+    root_logger.handlers.clear()
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(JsonFormatter())
+    console_handler.addFilter(LevelFilter(ALLOWED_LOG_LEVELS))
     root_logger.addHandler(console_handler)
-    
-    # Reduce noise from some libraries
+
+    # Reduce noise from chatty libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)

@@ -51,9 +51,9 @@ class FileJob(Base):
         nullable=False,
     )
 
-    # Composite index for common queries
+    # Composite index for common queries (name scoped to table to avoid conflicts)
     __table_args__ = (
-        Index('ix_status_updated', 'status', 'updated_at'),
+        Index('ix_file_jobs_v2_status_updated', 'status', 'updated_at'),
     )
 
     def __repr__(self) -> str:

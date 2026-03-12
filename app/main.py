@@ -216,6 +216,49 @@ async def identification_endpoint(
         )
 
 
+@app.post("/webhook/vx/v1/result")
+async def webhook_result(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Webhook receiver for split-service results.
+
+    Accepts the result payload posted by this service's own call_webhook(),
+    or by any downstream service, and persists it against the job record.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    req_id = body.get("req_id")
+    if not req_id:
+        raise HTTPException(status_code=400, detail="Missing req_id in webhook payload")
+
+    job = await get_file_job_by_req_id(db, req_id)
+    if not job:
+        logger.warning(f"Webhook received for unknown req_id: {req_id}")
+        return {"status": "ignored", "reason": "job not found"}
+
+    try:
+        from app.crud import update_job_status
+        await update_job_status(
+            db=db,
+            req_id=req_id,
+            status=job.status,
+            webhook_result=json.dumps(body),
+        )
+        await db.commit()
+        logger.info(f"Webhook: stored result for req_id={req_id}")
+    except Exception as e:
+        logger.error(f"Webhook: failed to persist result for req_id={req_id} — {e}")
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to persist webhook result")
+
+    return {"status": "received", "req_id": req_id}
+
+
 @app.get("/status/{req_id}", response_model=FileJobStatusResponse)
 async def get_status(
     req_id: str,
